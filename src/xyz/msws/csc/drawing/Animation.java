@@ -11,17 +11,11 @@ public class Animation {
     private static final int width = 1000, height = 1000; // Width / Height of Canvas
     private double x, y; // Position of ball
     private double vx, vy; // Velocity of ball
-    private double gravity = 9.8;
-    private int radius = 100;
-    private double mass = .85;
-    private double drag = .0005;
-    private double timeScale = .05;
-    private double friction = .01;
-    private double bounciness = .95;
-    private Random rnd;
+    private final int radius = 100;
+    private final double mass = .85;
 
-    private DrawingPanel panel;
-    private Graphics g;
+    private final DrawingPanel panel;
+    private final Graphics g;
 
     public static void main(String[] args) {
         DrawingPanel panel = new DrawingPanel(width, height);
@@ -39,7 +33,7 @@ public class Animation {
      * thread if you want code to be run after calling this method.
      */
     public void start() {
-        rnd = new Random();
+        Random rnd = new Random();
         x = width / 2 - radius / 2;
         y = width / 2 - radius / 2;
         vx = (rnd.nextDouble() - .5) * width / 2 / mass;
@@ -59,11 +53,14 @@ public class Animation {
      * Runs physics
      */
     private void tick() {
+        double gravity = 9.8;
         vy += gravity;
 
+        double drag = .0005;
         vx *= 1 - drag * mass;
         vy *= 1 - drag * mass;
 
+        double timeScale = .05;
         x += vx * timeScale;
         y += vy * timeScale;
         bounce();
@@ -76,6 +73,7 @@ public class Animation {
         // If the ball was center-drawn then we would want to do x - radius < 0, however we do not, so
         // we appropriately account for the centering.
 
+        double bounciness = .95;
         if (x < 0 || x + radius > width) {
             vx = -vx * bounciness;
         }
@@ -93,6 +91,7 @@ public class Animation {
      * Applies friction
      */
     private void onFriction() {
+        double friction = .01;
         vx *= 1 - friction;
     }
 

@@ -11,6 +11,6 @@ public class PrintRange {
         for (int i = start; i != (end + (start > end ? -1 : 1)); i += (start > end) ? -1 : 1) {
             System.out.print(i + " ");
         }
-        System.out.println("");
+        System.out.println();
     }
 }

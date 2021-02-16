@@ -1,6 +1,6 @@
 package xyz.msws.csc.wk2;
 
-import xyz.msws.utils.StringHelper;
+import xyz.msws.csc.utils.StringHelper;
 
 /**
  * Prints a left-justified triangle
@@ -20,7 +20,7 @@ public class BetterTriangle {
 		for (int i = 1; i <= limit; i += 2) {
 			String s = StringHelper.repeat(i + " ", i);
 			// I think this is cheating but it works ;)
-			System.out.println(String.format("%" + maxLength + "s", s));
+			System.out.printf("%" + maxLength + "s%n", s);
 		}
 	}
 }
