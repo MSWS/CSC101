@@ -1,5 +1,4 @@
-package xyz.msws.csc.drawing;
-/*
+package xyz.msws.csc.drawing;/*
  * =====================================================================
  * DrawingPanel.java
  * Simplified Java drawing window class
@@ -7,7 +6,7 @@ package xyz.msws.csc.drawing;
  *
  * authors: Marty Stepp, Stanford University
  *          Stuart Reges, University of Washington
- * version: 4.05, 2016/09/07 (BJP 4th edition)
+ * version: 4.04, 2016/08/17 (BJP 4th edition)
  * (make sure to also update version string in Javadoc header below!)
  * =====================================================================
  *
@@ -35,7 +34,7 @@ import java.awt.Rectangle;
 import java.awt.Shape;
 import java.awt.image.ImageObserver;
 import java.text.AttributedCharacterIterator;
-import java.util.*;
+import java.util.Collections;
 import java.awt.AlphaComposite;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -87,6 +86,12 @@ import java.net.URL;
 import java.net.NoRouteToHostException;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Scanner;
+import java.util.TreeMap;
+import java.util.Vector;
 import javax.imageio.ImageIO;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -123,7 +128,7 @@ import javax.swing.filechooser.FileFilter;
  * Authors: Marty Stepp (Stanford University) and Stuart Reges (University of Washington).
  *
  * <p>
- * Version: 4.05, 2016/09/07 (to accompany BJP 4th edition).
+ * Version: 4.04, 2016/08/17 (to accompany BJP 4th edition).
  *
  * <p>
  * You can always download the latest {@code DrawingPanel} from
@@ -279,7 +284,7 @@ import javax.swing.filechooser.FileFilter;
  * - grid lines
  *
  * @author Marty Stepp, Stanford University, and Stuart Reges, University of Washington
- * @version 4.05, 2016/09/07 (BJP 4th edition)
+ * @version 4.04, 2016/08/17 (BJP 4th edition)
  */
 public final class DrawingPanel implements ImageObserver {
     // class constants
@@ -292,7 +297,7 @@ public final class DrawingPanel implements ImageObserver {
     private static final int MAX_SIZE               = 10000;   // max width/height
     private static final int GRID_LINES_PX_GAP_DEFAULT = 10;   // default px between grid lines
 
-    private static final String VERSION             = "4.05 (2016/09/07)";
+    private static final String VERSION             = "4.04 (2016/08/17)";
     private static final String ABOUT_MESSAGE       = "DrawingPanel\n"
             + "Graphical library class to support Building Java Programs textbook\n"
             + "written by Marty Stepp, Stanford University\n"
@@ -351,7 +356,7 @@ public final class DrawingPanel implements ImageObserver {
     public static final String SAVE_PROPERTY        = "drawingpanel.save";
 
     /* a list of all DrawingPanel instances ever created; used for saving graphical output */
-    private static final List<DrawingPanel> INSTANCES = new ArrayList<>();
+    private static final List<DrawingPanel> INSTANCES = new ArrayList<DrawingPanel>();
 
     // static variables
     private static boolean DEBUG = false;
@@ -560,12 +565,12 @@ public final class DrawingPanel implements ImageObserver {
         // look for the main thread in the current thread group
         Thread[] threads = new Thread[activeCount];
         group.enumerate(threads);
-        for (Thread thread : threads) {
+        for (int i = 0; i < threads.length; i++) {
+            Thread thread = threads[i];
             String name = String.valueOf(thread.getName()).toLowerCase();
-            if (DEBUG)
-                System.out.println("    DrawingPanel.mainIsActive(): " + thread.getName() + ", priority=" + thread.getPriority() + ", alive=" + thread.isAlive() + ", stack=" + java.util.Arrays.toString(thread.getStackTrace()));
-            if (name.contains("main") ||
-                    name.contains("testrunner-assignmentrunner")) {
+            if (DEBUG) System.out.println("    DrawingPanel.mainIsActive(): " + thread.getName() + ", priority=" + thread.getPriority() + ", alive=" + thread.isAlive() + ", stack=" + java.util.Arrays.toString(thread.getStackTrace()));
+            if (name.indexOf("main") >= 0 ||
+                    name.indexOf("testrunner-assignmentrunner") >= 0) {
                 // found main thread!
                 // (TestRunnerApplet's main runner also counts as "main" thread)
                 return thread.isAlive();
@@ -699,7 +704,7 @@ public final class DrawingPanel implements ImageObserver {
     private static boolean usingDrJava() {
         try {
             return System.getProperty("drjava.debug.port") != null ||
-                    System.getProperty("java.class.path").toLowerCase().contains("drjava");
+                    System.getProperty("java.class.path").toLowerCase().indexOf("drjava") >= 0;
         } catch (SecurityException e) {
             // running as an applet, or something
             return false;
@@ -721,8 +726,8 @@ public final class DrawingPanel implements ImageObserver {
     private ImagePanel imagePanel;         // real drawing surface
     private int currentZoom = 1;           // panel's zoom factor for drawing
     private int gridLinesPxGap = GRID_LINES_PX_GAP_DEFAULT;   // px between grid lines
-    private final int initialPixel;              // initial value in each pixel, for clear()
-    private final int instanceNumber;            // every DPanel has a unique number
+    private int initialPixel;              // initial value in each pixel, for clear()
+    private int instanceNumber;            // every DPanel has a unique number
     private int width;                     // dimensions of window frame
     private int height;                    // dimensions of window frame
     private JFileChooser chooser;          // file chooser to save files
@@ -730,9 +735,11 @@ public final class DrawingPanel implements ImageObserver {
     private JLabel statusBar;              // status bar showing mouse position
     private JPanel panel;                  // overall drawing surface
     private long createTime;               // time at which DrawingPanel was constructed
-    private final Map<String, Integer> counts;   // new field to support DebuggingGraphics
+    private Map<String, Integer> counts;   // new field to support DebuggingGraphics
+    private MouseInputListener mouseListener;
     private String callingClassName;       // name of class that constructed this panel
     private Timer timer;                   // animation timer
+    private WindowListener windowListener;
 
     /**
      * Constructs a drawing panel with a default width and height enclosed in a window.
@@ -761,27 +768,29 @@ public final class DrawingPanel implements ImageObserver {
 
             if (shutdownThread == null && !usingDrJava()) {
                 if (DEBUG) System.out.println("DrawingPanel(): starting idle thread");
-                // Runnable implementation; used for shutdown thread.
-                shutdownThread = new Thread(() -> {
-                    boolean save = shouldSave();
-                    try {
-                        while (true) {
-                            // maybe shut down the program, if no more DrawingPanels are onscreen
-                            // and main has finished executing
-                            save |= shouldSave();
-                            if (DEBUG) System.out.println("DrawingPanel idle thread: instances=" + instances + ", save=" + save + ", main active=" + mainIsActive());
-                            if ((instances == 0 || save) && !mainIsActive()) {
-                                try {
-                                    System.exit(0);
-                                } catch (SecurityException sex) {
-                                    if (DEBUG) System.out.println("DrawingPanel idle thread: unable to exit program: " + sex);
+                shutdownThread = new Thread(new Runnable() {
+                    // Runnable implementation; used for shutdown thread.
+                    public void run() {
+                        boolean save = shouldSave();
+                        try {
+                            while (true) {
+                                // maybe shut down the program, if no more DrawingPanels are onscreen
+                                // and main has finished executing
+                                save |= shouldSave();
+                                if (DEBUG) System.out.println("DrawingPanel idle thread: instances=" + instances + ", save=" + save + ", main active=" + mainIsActive());
+                                if ((instances == 0 || save) && !mainIsActive()) {
+                                    try {
+                                        System.exit(0);
+                                    } catch (SecurityException sex) {
+                                        if (DEBUG) System.out.println("DrawingPanel idle thread: unable to exit program: " + sex);
+                                    }
                                 }
-                            }
 
-                            Thread.sleep(250);
+                                Thread.sleep(250);
+                            }
+                        } catch (Exception e) {
+                            if (DEBUG) System.out.println("DrawingPanel idle thread: exception caught: " + e);
                         }
-                    } catch (Exception e) {
-                        if (DEBUG) System.out.println("DrawingPanel idle thread: exception caught: " + e);
                     }
                 });
                 // shutdownThread.setPriority(Thread.MIN_PRIORITY);
@@ -814,7 +823,7 @@ public final class DrawingPanel implements ImageObserver {
         g2 = (Graphics2D) image.getGraphics();
         // new field assignments for DebuggingGraphics
         g3 = new DebuggingGraphics();
-        counts = new TreeMap<>();
+        counts = new TreeMap<String, Integer>();
         g2.setColor(Color.BLACK);
         if (antialias) {
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -842,13 +851,13 @@ public final class DrawingPanel implements ImageObserver {
             panel.add(imagePanel);
 
             // listen to mouse movement
-            MouseInputListener mouseListener = new DPMouseListener();
+            mouseListener = new DPMouseListener();
             panel.addMouseMotionListener(mouseListener);
 
             // main window frame
             frame = new JFrame(TITLE);
             // frame.setResizable(false);
-            WindowListener windowListener = new DPWindowListener();
+            windowListener = new DPWindowListener();
             frame.addWindowListener(windowListener);
             // JPanel center = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
             JScrollPane center = new JScrollPane(panel);
@@ -876,25 +885,27 @@ public final class DrawingPanel implements ImageObserver {
             // headless mode; just set a hook on shutdown to save the image
             callingClassName = getCallingClassName();
             try {
-                // run on shutdown to save the image
-                Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                    if (DEBUG) System.out.println("DrawingPanel.run(): Running shutdown hook");
-                    if (DEBUG) System.out.println("DrawingPanel shutdown hook: instances=" + instances);
-                    try {
-                        String filename = System.getProperty(SAVE_PROPERTY);
-                        if (filename == null) {
-                            filename = callingClassName + ".png";
-                        }
+                Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+                    // run on shutdown to save the image
+                    public void run() {
+                        if (DEBUG) System.out.println("DrawingPanel.run(): Running shutdown hook");
+                        if (DEBUG) System.out.println("DrawingPanel shutdown hook: instances=" + instances);
+                        try {
+                            String filename = System.getProperty(SAVE_PROPERTY);
+                            if (filename == null) {
+                                filename = callingClassName + ".png";
+                            }
 
-                        if (isAnimated()) {
-                            saveAnimated(filename);
-                        } else {
-                            save(filename);
+                            if (isAnimated()) {
+                                saveAnimated(filename);
+                            } else {
+                                save(filename);
+                            }
+                        } catch (SecurityException e) {
+                            System.err.println("Security error while saving image: " + e);
+                        } catch (IOException e) {
+                            System.err.println("Error saving image: " + e);
                         }
-                    } catch (SecurityException e) {
-                        System.err.println("Security error while saving image: " + e);
-                    } catch (IOException e) {
-                        System.err.println("Error saving image: " + e);
                     }
                 }));
             } catch (Exception e) {
@@ -944,10 +955,28 @@ public final class DrawingPanel implements ImageObserver {
      */
     public void addMouseListener(MouseListener listener) {
         ensureNotNull("listener", listener);
+        panel.addMouseListener(listener);
         if (listener instanceof MouseMotionListener) {
             panel.addMouseMotionListener((MouseMotionListener) listener);
         }
     }
+
+    /**
+     * Adds the given event listener to respond to mouse events on this panel.
+     */
+//    public void addMouseListener(MouseMotionListener listener) {
+//        panel.addMouseMotionListener(listener);
+//        if (listener instanceof MouseListener) {
+//            panel.addMouseListener((MouseListener) listener);
+//        }
+//    }
+
+//    /**
+//     * Adds the given event listener to respond to mouse events on this panel.
+//     */
+//    public void addMouseListener(MouseInputListener listener) {
+//        addMouseListener((MouseListener) listener);
+//    }
 
     /*
      * Whether the panel should automatically switch to animated mode
@@ -989,7 +1018,9 @@ public final class DrawingPanel implements ImageObserver {
      */
     public void clear() {
         int[] pixels = new int[width * height];
-        Arrays.fill(pixels, initialPixel);
+        for (int i = 0; i < pixels.length; i++) {
+            pixels[i] = initialPixel;
+        }
         image.setRGB(0, 0, width, height, pixels, 0, 1);
     }
 
@@ -1026,8 +1057,8 @@ public final class DrawingPanel implements ImageObserver {
             // get list of images to compare against from web site
             URL url = new URL(COURSE_WEB_SITE);
             Scanner input = new Scanner(url.openStream());
-            List<String> lines = new ArrayList<>();
-            List<String> filenames = new ArrayList<>();
+            List<String> lines = new ArrayList<String>();
+            List<String> filenames = new ArrayList<String>();
             while (input.hasNextLine()) {
                 String line = input.nextLine().trim();
                 if (line.length() == 0) { continue; }
@@ -1086,8 +1117,10 @@ public final class DrawingPanel implements ImageObserver {
             }
         } catch (NoRouteToHostException nrthe) {
             JOptionPane.showMessageDialog(frame, "You do not appear to have a working internet connection.\nPlease check your internet settings and try again.\n\n" + nrthe);
-        } catch (UnknownHostException | SocketException uhe) {
+        } catch (UnknownHostException uhe) {
             JOptionPane.showMessageDialog(frame, "Internet connection error: \n" + uhe);
+        } catch (SocketException se) {
+            JOptionPane.showMessageDialog(frame, "Internet connection error: \n" + se);
         } catch (IOException ioe) {
             JOptionPane.showMessageDialog(frame, "Unable to compare images: \n" + ioe);
         }
@@ -1327,9 +1360,7 @@ public final class DrawingPanel implements ImageObserver {
      */
     @Override
     public boolean imageUpdate(Image img, int infoflags, int x, int y, int width, int height) {
-        if (imagePanel != null) {
-            imagePanel.imageUpdate(img, infoflags, x, y, width, height);
-        }
+        imagePanel.imageUpdate(img, infoflags, x, y, width, height);
         return false;
     }
 
@@ -1337,7 +1368,7 @@ public final class DrawingPanel implements ImageObserver {
      * Sets up state for drawing and saving frames of animation to a GIF image.
      */
     private void initializeAnimation() {
-        frames = new ArrayList<>();
+        frames = new ArrayList<ImageFrame>();
         encoder = new Gif89Encoder();
         /*
         try {
@@ -1404,10 +1435,10 @@ public final class DrawingPanel implements ImageObserver {
             throw new RuntimeException("DrawingPanel.loadImage: File not found: " + filename);
         }
         Image img = Toolkit.getDefaultToolkit().getImage(filename);
-        MediaTracker mt = new MediaTracker(imagePanel == null ? new JPanel() : imagePanel);
+        MediaTracker mt = new MediaTracker(imagePanel);
         mt.addImage(img, 0);
         try {
-            mt.waitForID(0);
+            mt.waitForAll();
         } catch (InterruptedException ie) {
             // empty
         }
@@ -1487,7 +1518,7 @@ public final class DrawingPanel implements ImageObserver {
     public void onMouseClick(DPMouseEventHandler e) {
         ensureNotNull("event handler", e);
         DPMouseEventHandlerAdapter adapter = new DPMouseEventHandlerAdapter(e, "click");
-        addMouseListener(adapter);
+        addMouseListener((MouseListener) adapter);
     }
 
     /**
@@ -1499,7 +1530,7 @@ public final class DrawingPanel implements ImageObserver {
     public void onMouseDown(DPMouseEventHandler e) {
         ensureNotNull("event handler", e);
         DPMouseEventHandlerAdapter adapter = new DPMouseEventHandlerAdapter(e, "press");
-        addMouseListener(adapter);
+        addMouseListener((MouseListener) adapter);
     }
 
     /**
@@ -1511,7 +1542,7 @@ public final class DrawingPanel implements ImageObserver {
     public void onMouseDrag(DPMouseEventHandler e) {
         ensureNotNull("event handler", e);
         DPMouseEventHandlerAdapter adapter = new DPMouseEventHandlerAdapter(e, "drag");
-        addMouseListener(adapter);
+        addMouseListener((MouseListener) adapter);
     }
 
     /**
@@ -1523,7 +1554,7 @@ public final class DrawingPanel implements ImageObserver {
     public void onMouseEnter(DPMouseEventHandler e) {
         ensureNotNull("event handler", e);
         DPMouseEventHandlerAdapter adapter = new DPMouseEventHandlerAdapter(e, "enter");
-        addMouseListener(adapter);
+        addMouseListener((MouseListener) adapter);
     }
 
     /**
@@ -1535,7 +1566,7 @@ public final class DrawingPanel implements ImageObserver {
     public void onMouseExit(DPMouseEventHandler e) {
         ensureNotNull("event handler", e);
         DPMouseEventHandlerAdapter adapter = new DPMouseEventHandlerAdapter(e, "exit");
-        addMouseListener(adapter);
+        addMouseListener((MouseListener) adapter);
     }
 
     /**
@@ -1547,7 +1578,7 @@ public final class DrawingPanel implements ImageObserver {
     public void onMouseMove(DPMouseEventHandler e) {
         ensureNotNull("event handler", e);
         DPMouseEventHandlerAdapter adapter = new DPMouseEventHandlerAdapter(e, "move");
-        addMouseListener(adapter);
+        addMouseListener((MouseListener) adapter);
     }
 
     /**
@@ -1559,7 +1590,7 @@ public final class DrawingPanel implements ImageObserver {
     public void onMouseUp(DPMouseEventHandler e) {
         ensureNotNull("event handler", e);
         DPMouseEventHandlerAdapter adapter = new DPMouseEventHandlerAdapter(e, "release");
-        addMouseListener(adapter);
+        addMouseListener((MouseListener) adapter);
     }
 
     /**
@@ -1810,9 +1841,7 @@ public final class DrawingPanel implements ImageObserver {
         if (g2 != null) {
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, value);
         }
-        if (imagePanel != null) {
-            imagePanel.repaint();
-        }
+        imagePanel.repaint();
     }
 
     /**
@@ -1865,9 +1894,7 @@ public final class DrawingPanel implements ImageObserver {
     public void setGridLines(boolean gridLines, int pxGap) {
         this.gridLines = gridLines;
         this.gridLinesPxGap = pxGap;
-        if (imagePanel != null) {
-            imagePanel.repaint();
-        }
+        imagePanel.repaint();
     }
 
     /**
@@ -2024,10 +2051,8 @@ public final class DrawingPanel implements ImageObserver {
 
         // replace the image buffer for drawing
         BufferedImage newImage = new BufferedImage(width, height, image.getType());
-        if (imagePanel != null) {
-            imagePanel.setImage(newImage);
-        }
-        newImage.getGraphics().drawImage(image, 0, 0, imagePanel == null ? new JPanel() : imagePanel);
+        imagePanel.setImage(newImage);
+        newImage.getGraphics().drawImage(image, 0, 0, imagePanel);
 
         this.width = width;
         this.height = height;
@@ -2188,9 +2213,11 @@ public final class DrawingPanel implements ImageObserver {
             } else {
                 final JButton button = new JButton(names[i]);
                 button.setActionCommand(String.valueOf(i));
-                button.addActionListener(e -> {
-                    hack[0] = Integer.parseInt(button.getActionCommand());
-                    dialog.setVisible(false);
+                button.addActionListener(new ActionListener() {
+                    public void actionPerformed(ActionEvent e) {
+                        hack[0] = Integer.parseInt(button.getActionCommand());
+                        dialog.setVisible(false);
+                    }
                 });
                 center.add(button);
             }
@@ -2200,7 +2227,11 @@ public final class DrawingPanel implements ImageObserver {
         JButton cancel = new JButton("Cancel");
         cancel.setMnemonic('C');
         cancel.requestFocus();
-        cancel.addActionListener(e -> dialog.setVisible(false));
+        cancel.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                dialog.setVisible(false);
+            }
+        });
         south.add(cancel);
 
         dialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
@@ -2277,10 +2308,12 @@ public final class DrawingPanel implements ImageObserver {
      */
     private void toFront(final Window window) {
         // TODO: remove anonymous inner class
-        EventQueue.invokeLater(() -> {
-            if (window != null) {
-                window.toFront();
-                window.repaint();
+        EventQueue.invokeLater(new Runnable() {
+            public void run() {
+                if (window != null) {
+                    window.toFront();
+                    window.repaint();
+                }
             }
         });
     }
@@ -2361,7 +2394,11 @@ public final class DrawingPanel implements ImageObserver {
             } else if (e.getActionCommand().equals("Compare to File...")) {
                 compareToFile();
             } else if (e.getActionCommand().equals("Compare to Web File...")) {
-                new Thread(() -> compareToURL()).start();
+                new Thread(new Runnable() {
+                    public void run() {
+                        compareToURL();
+                    }
+                }).start();
             } else if (e.getActionCommand().equals("Save As...")) {
                 saveAs();
             } else if (e.getActionCommand().equals("Save Animated GIF...")) {
@@ -2386,7 +2423,7 @@ public final class DrawingPanel implements ImageObserver {
     /*
      * Internal file filter class for showing image files in JFileChooser.
      */
-    private static class DPFileFilter extends FileFilter {
+    private class DPFileFilter extends FileFilter {
         public boolean accept(File file) {
             return file.isDirectory() ||
                     (file.getName().toLowerCase().endsWith(".png") ||
@@ -2407,14 +2444,14 @@ public final class DrawingPanel implements ImageObserver {
      * lambda functions to handle mouse events that occur in a DrawingPanel.
      */
     @FunctionalInterface
-    public interface DPMouseEventHandler {
+    public static interface DPMouseEventHandler {
         /**
          * Called when a mouse event occurs at the given (x, y) position
          * in the drawing panel window.
          * @param x x-coordinate at which the event occurred
          * @param y y-coordinate at which the event occurred
          */
-        void onMouseEvent(int x, int y);
+        public void onMouseEvent(int x, int y);
     }
 
     /**
@@ -2422,19 +2459,19 @@ public final class DrawingPanel implements ImageObserver {
      * lambda functions to handle key events that occur in a DrawingPanel.
      */
     @FunctionalInterface
-    public interface DPKeyEventHandler {
+    public static interface DPKeyEventHandler {
         /**
          * Called when a key event occurs involving the given key character
          * in the drawing panel window.
          * @param keyCode char value that was typed
          */
-        void onKeyEvent(char keyCode);
+        public void onKeyEvent(char keyCode);
     }
 
     // internal class to implement DPKeyEventHandler behavior.
-    private static class DPKeyEventHandlerAdapter implements KeyListener {
-        private final DPKeyEventHandler handler;
-        private final String eventType;
+    private class DPKeyEventHandlerAdapter implements KeyListener {
+        private DPKeyEventHandler handler;
+        private String eventType;
 
         /**
          * Constructs a new key handler adapter.
@@ -2461,7 +2498,7 @@ public final class DrawingPanel implements ImageObserver {
          */
         @Override
         public void keyReleased(KeyEvent e) {
-            if (Objects.equals(eventType, "release")) {
+            if (eventType == "release") {
                 int keyCode = e.getKeyCode();
                 if (keyCode < ' ') {
                     return;
@@ -2476,16 +2513,16 @@ public final class DrawingPanel implements ImageObserver {
          */
         @Override
         public void keyTyped(KeyEvent e) {
-            if (Objects.equals(eventType, "press")) {
+            if (eventType == "press") {
                 handler.onKeyEvent(e.getKeyChar());
             }
         }
     }
 
     // internal class to implement DPMouseEventHandler behavior.
-    private static class DPMouseEventHandlerAdapter implements MouseInputListener {
-        private final DPMouseEventHandler handler;
-        private final String eventType;
+    private class DPMouseEventHandlerAdapter implements MouseInputListener {
+        private DPMouseEventHandler handler;
+        private String eventType;
 
         /**
          * Constructs a new mouse handler adapter.
@@ -2503,7 +2540,7 @@ public final class DrawingPanel implements ImageObserver {
          */
         @Override
         public void mousePressed(MouseEvent e) {
-            if (Objects.equals(eventType, "press")) {
+            if (eventType == "press") {
                 handler.onMouseEvent(e.getX(), e.getY());
             }
         }
@@ -2514,7 +2551,7 @@ public final class DrawingPanel implements ImageObserver {
          */
         @Override
         public void mouseReleased(MouseEvent e) {
-            if (Objects.equals(eventType, "release")) {
+            if (eventType == "release") {
                 handler.onMouseEvent(e.getX(), e.getY());
             }
         }
@@ -2525,7 +2562,7 @@ public final class DrawingPanel implements ImageObserver {
          */
         @Override
         public void mouseClicked(MouseEvent e) {
-            if (Objects.equals(eventType, "click")) {
+            if (eventType == "click") {
                 handler.onMouseEvent(e.getX(), e.getY());
             }
         }
@@ -2536,7 +2573,7 @@ public final class DrawingPanel implements ImageObserver {
          */
         @Override
         public void mouseEntered(MouseEvent e) {
-            if (Objects.equals(eventType, "enter")) {
+            if (eventType == "enter") {
                 handler.onMouseEvent(e.getX(), e.getY());
             }
         }
@@ -2547,7 +2584,7 @@ public final class DrawingPanel implements ImageObserver {
          */
         @Override
         public void mouseExited(MouseEvent e) {
-            if (Objects.equals(eventType, "exit")) {
+            if (eventType == "exit") {
                 handler.onMouseEvent(e.getX(), e.getY());
             }
         }
@@ -2558,7 +2595,7 @@ public final class DrawingPanel implements ImageObserver {
          */
         @Override
         public void mouseMoved(MouseEvent e) {
-            if (Objects.equals(eventType, "move")) {
+            if (eventType == "move") {
                 handler.onMouseEvent(e.getX(), e.getY());
             }
         }
@@ -2569,7 +2606,7 @@ public final class DrawingPanel implements ImageObserver {
          */
         @Override
         public void mouseDragged(MouseEvent e) {
-            if (Objects.equals(eventType, "drag")) {
+            if (eventType == "drag") {
                 handler.onMouseEvent(e.getX(), e.getY());
             }
         }
@@ -2698,15 +2735,15 @@ public final class DrawingPanel implements ImageObserver {
             g2.fillArc(x, y, width, height, startAngle, arcAngle);
         }
 
-        public void drawPolyline(int[] xPoints, int[] yPoints, int nPoints) {
+        public void drawPolyline(int xPoints[], int yPoints[], int nPoints) {
             g2.drawPolyline(xPoints, yPoints, nPoints);
         }
 
-        public void drawPolygon(int[] xPoints, int[] yPoints, int nPoints) {
+        public void drawPolygon(int xPoints[], int yPoints[], int nPoints) {
             g2.drawPolygon(xPoints, yPoints, nPoints);
         }
 
-        public void fillPolygon(int[] xPoints, int[] yPoints, int nPoints) {
+        public void fillPolygon(int xPoints[], int yPoints[], int nPoints) {
             g2.fillPolygon(xPoints, yPoints, nPoints);
         }
 
@@ -2717,17 +2754,17 @@ public final class DrawingPanel implements ImageObserver {
 
         public boolean drawImage(Image img, int x, int y, ImageObserver observer) {
             return g2.drawImage(img, x, y, observer);
-        }
+        };
 
         public boolean drawImage(Image img, int x, int y, int width,
                                  int height, ImageObserver observer) {
             return g2.drawImage(img, x, y, width, height, observer);
-        }
+        };
 
         public boolean drawImage(Image img, int x, int y, Color bgcolor,
                                  ImageObserver observer) {
             return g2.drawImage(img, x, y, bgcolor, observer);
-        }
+        };
 
         public boolean drawImage(Image img, int x, int y, int width,
                                  int height, Color bgcolor, ImageObserver observer) {
@@ -2810,6 +2847,8 @@ public final class DrawingPanel implements ImageObserver {
         private String image1name;
         private int numDiffPixels;
         private int opacity = 50;
+        private String label1Text = "Expected";
+        private String label2Text = "Actual";
         private boolean highlightDiffs = false;
 
         private Color highlightColor = new Color(224, 0, 224);
@@ -3106,9 +3145,7 @@ public final class DrawingPanel implements ImageObserver {
 
             diffPixelsLabel = new JLabel("(" + numDiffPixels + " pixels differ)");
             diffPixelsLabel.setFont(diffPixelsLabel.getFont().deriveFont(Font.BOLD));
-            String label1Text = "Expected";
             image1Label = new JLabel(label1Text);
-            String label2Text = "Actual";
             image2Label = new JLabel(label2Text);
 
             setupMenuBar();
@@ -3254,7 +3291,7 @@ public final class DrawingPanel implements ImageObserver {
      */
     class DirectGif89Frame extends Gif89Frame {
 
-        private final int[] argbPixels;
+        private int[] argbPixels;
 
         // ----------------------------------------------------------------------------
         /**
@@ -3302,7 +3339,7 @@ public final class DrawingPanel implements ImageObserver {
          *            Array containing at least width*height pixels in the
          *            format returned by java.awt.Color.getRGB().
          */
-        public DirectGif89Frame(int width, int height, int[] argb_pixels) {
+        public DirectGif89Frame(int width, int height, int argb_pixels[]) {
             theWidth = width;
             theHeight = height;
             argbPixels = new int[theWidth * theHeight];
@@ -3405,11 +3442,11 @@ public final class DrawingPanel implements ImageObserver {
     class Gif89Encoder {
         private static final boolean DEBUG = false;
         private Dimension dispDim = new Dimension(0, 0);
-        private final GifColorTable colorTable;
+        private GifColorTable colorTable;
         private int bgIndex = 0;
         private int loopCount = 1;
         private String theComments;
-        private final Vector<Gif89Frame> vFrames = new Vector<>();
+        private Vector<Gif89Frame> vFrames = new Vector<Gif89Frame>();
 
         // ----------------------------------------------------------------------------
         /**
@@ -3473,7 +3510,7 @@ public final class DrawingPanel implements ImageObserver {
          *                See the addFrame() methods.
          */
         public Gif89Encoder(Color[] colors, int width, int height,
-                            byte[] ci_pixels) throws IOException {
+                            byte ci_pixels[]) throws IOException {
             this(colors);
             addFrame(width, height, ci_pixels);
         }
@@ -3557,7 +3594,7 @@ public final class DrawingPanel implements ImageObserver {
          *                add some pedantic check later, to justify the
          *                generality :)
          */
-        public void addFrame(int width, int height, byte[] ci_pixels)
+        public void addFrame(int width, int height, byte ci_pixels[])
                 throws IOException {
             addFrame(new IndexGif89Frame(width, height, ci_pixels));
         }
@@ -3692,7 +3729,7 @@ public final class DrawingPanel implements ImageObserver {
             }
 
             // write GIF TRAILER
-            out.write(';');
+            out.write((int) ';');
 
             out.flush();
         }
@@ -3747,7 +3784,7 @@ public final class DrawingPanel implements ImageObserver {
 
         public void endEncoding(OutputStream out) throws IOException {
             // write GIF TRAILER
-            out.write(';');
+            out.write((int) ';');
 
             out.flush();
         }
@@ -3819,7 +3856,7 @@ public final class DrawingPanel implements ImageObserver {
             // (i.e., interations beyond 1) rather than as an iteration count
             // (thus, to avoid repeating we have to omit the whole extension)
 
-            os.write('!'); // GIF Extension Introducer
+            os.write((int) '!'); // GIF Extension Introducer
             os.write(0xff); // Application Extension Label
 
             os.write(11); // application ID block size
@@ -3836,7 +3873,7 @@ public final class DrawingPanel implements ImageObserver {
 
         // ----------------------------------------------------------------------------
         private void writeCommentExtension(OutputStream os) throws IOException {
-            os.write('!'); // GIF Extension Introducer
+            os.write((int) '!'); // GIF Extension Introducer
             os.write(0xfe); // Comment Extension Label
 
             int remainder = theComments.length() % 255;
@@ -3864,7 +3901,7 @@ public final class DrawingPanel implements ImageObserver {
     class GifColorTable {
 
         // the palette of ARGB colors, packed as returned by Color.getRGB()
-        private final int[] theColors = new int[256];
+        private int[] theColors = new int[256];
 
         // other basic attributes
         private int colorDepth;
@@ -4007,9 +4044,9 @@ public final class DrawingPanel implements ImageObserver {
         private void trackPixelUsage(IndexGif89Frame igf) throws IOException {
             byte[] ci_pixels = (byte[]) igf.getPixelSource();
             int npixels = ci_pixels.length;
-            for (byte ci_pixel : ci_pixels)
-                if (ci_pixel >= ciCount)
-                    ciCount = ci_pixel + 1;
+            for (int i = 0; i < npixels; ++i)
+                if (ci_pixels[i] >= ciCount)
+                    ciCount = ci_pixels[i] + 1;
         }
 
         // ----------------------------------------------------------------------------
@@ -4037,7 +4074,7 @@ public final class DrawingPanel implements ImageObserver {
     // Hashtable) on the other. Doubtless my little hash could be improved by
     // tuning the capacity (at the very least). Suggestions are welcome.
     // ==============================================================================
-    static class ReverseColorMap {
+    class ReverseColorMap {
 
         private class ColorRecord {
             int rgb;
@@ -4059,7 +4096,7 @@ public final class DrawingPanel implements ImageObserver {
         private static final int HCAPACITY = 2053; // a nice prime number
 
         // our hash table proper
-        private final ColorRecord[] hTable = new ColorRecord[HCAPACITY];
+        private ColorRecord[] hTable = new ColorRecord[HCAPACITY];
 
         // ----------------------------------------------------------------------------
         // Assert: rgb is not negative (which is the same as saying, be sure the
@@ -4276,7 +4313,7 @@ public final class DrawingPanel implements ImageObserver {
             if (transflag == 1 || epluribus) // using transparency or animating
             // ?
             {
-                os.write('!'); // GIF Extension Introducer
+                os.write((int) '!'); // GIF Extension Introducer
                 os.write(0xf9); // Graphic Control Label
                 os.write(4); // subsequent data block size
                 os.write((disposalCode << 2) | transflag); // packed fields (1
@@ -4289,7 +4326,7 @@ public final class DrawingPanel implements ImageObserver {
 
         // ----------------------------------------------------------------------------
         private void writeImageDescriptor(OutputStream os) throws IOException {
-            os.write(','); // Image Separator
+            os.write((int) ','); // Image Separator
             putShort(thePosition.x, os);
             putShort(thePosition.y, os);
             putShort(theWidth, os);
@@ -4299,15 +4336,14 @@ public final class DrawingPanel implements ImageObserver {
     }
 
     // ==============================================================================
-    static class GifPixelsEncoder {
+    class GifPixelsEncoder {
 
         private static final int EOF = -1;
 
-        private final int imgW;
-        private final int imgH;
-        private final byte[] pixAry;
-        private final boolean wantInterlaced;
-        private final int initCodeSize;
+        private int imgW, imgH;
+        private byte[] pixAry;
+        private boolean wantInterlaced;
+        private int initCodeSize;
 
         // raster data navigators
         private int countDown;
@@ -4572,7 +4608,7 @@ public final class DrawingPanel implements ImageObserver {
         int cur_accum = 0;
         int cur_bits = 0;
 
-        int[] masks = { 0x0000, 0x0001, 0x0003, 0x0007, 0x000F, 0x001F, 0x003F,
+        int masks[] = { 0x0000, 0x0001, 0x0003, 0x0007, 0x000F, 0x001F, 0x003F,
                 0x007F, 0x00FF, 0x01FF, 0x03FF, 0x07FF, 0x0FFF, 0x1FFF, 0x3FFF,
                 0x7FFF, 0xFFFF };
 
@@ -4705,7 +4741,7 @@ public final class DrawingPanel implements ImageObserver {
          * @param ci_pixels
          *            Array containing at least width*height color-index pixels.
          */
-        public IndexGif89Frame(int width, int height, byte[] ci_pixels) {
+        public IndexGif89Frame(int width, int height, byte ci_pixels[]) {
             theWidth = width;
             theHeight = height;
             ciPixels = new byte[theWidth * theHeight];

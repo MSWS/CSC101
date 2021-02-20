@@ -1,6 +1,6 @@
 package xyz.msws.csc.wk2;
 
-import xyz.msws.utils.StringHelper;
+import xyz.msws.csc.utils.StringHelper;
 
 public class Triangle {
 	public static void main(String[] args) {
